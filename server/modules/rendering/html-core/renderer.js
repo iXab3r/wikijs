@@ -36,8 +36,15 @@ module.exports = {
     const exactReservedPaths = /^\/[a-z]$/i
 
     const isHostSet = WIKI.config.host.length > 7 && WIKI.config.host !== 'http://'
+    let wikiHostUrl = null
     if (!isHostSet) {
       WIKI.logger.warn('Host is not set. You must set the Site Host under General in the Administration Area!')
+    } else {
+      try {
+        wikiHostUrl = new URL(WIKI.config.host)
+      } catch (err) {
+        WIKI.logger.warn(`Invalid site host configured: ${WIKI.config.host}`)
+      }
     }
 
     $('a').each((i, elm) => {
@@ -49,15 +56,27 @@ module.exports = {
         return
       }
 
-      // -> Strip host from local links
-      if (isHostSet && href.indexOf(`${WIKI.config.host}/`) === 0) {
-        href = href.replace(WIKI.config.host, '')
+      href = href.trim()
+
+      // -> Parse absolute links and only strip the host for exact same-origin links
+      let parsedHref = null
+      const isProtocolRelative = href.indexOf('//') === 0
+      const isAbsoluteUrl = /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(href) || isProtocolRelative
+
+      if (wikiHostUrl && isAbsoluteUrl) {
+        try {
+          parsedHref = isProtocolRelative ? new URL(`${wikiHostUrl.protocol}${href}`) : new URL(href)
+        } catch (err) {}
+      }
+
+      if (wikiHostUrl && parsedHref && parsedHref.origin === wikiHostUrl.origin) {
+        href = `${parsedHref.pathname}${parsedHref.search}${parsedHref.hash}`
       }
 
       // -> Assign local / external tag
-      if (href.indexOf('://') < 0) {
+      if (href.indexOf('://') < 0 && href.indexOf('//') !== 0) {
         // -> Remove trailing slash
-        if (_.endsWith('/')) {
+        if (_.endsWith(href, '/')) {
           href = href.slice(0, -1)
         }
 
@@ -228,7 +247,7 @@ module.exports = {
 
       // -> Add anchor
       $(elm).attr('id', headerSlug).addClass('toc-header')
-      $(elm).prepend(`<a class="toc-anchor" href="#${headerSlug}">&#xB6;</a> `)
+      $(elm).prepend(`<a class=\"toc-anchor\" href=\"#${headerSlug}\">&#xB6;</a> `)
 
       headers.push(headerSlug)
     })
@@ -249,7 +268,7 @@ module.exports = {
 
     $('body').contents().toArray().forEach(item => {
       if (item && item.name === 'table' && item.parent.name === 'body') {
-        $(item).wrap('<div class="table-container"></div>')
+        $(item).wrap('<div class=\"table-container\"></div>')
       }
     })
 
